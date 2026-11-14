@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>城市尋寶獵人 | 150m 實境探索</title>
+  <!-- 載入 Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 載入 Google Fonts: Inter & Noto Sans TC -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- 載入 Font Awesome 圖示庫 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'Noto Sans TC', 'sans-serif'],
+          },
+          colors: {
+            emerald: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+              900: '#064e3b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* 自訂捲軸與微動畫 */
+    body {
+      background-color: #f8fafc;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .card-transition {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.8); opacity: 0.8; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+    .gps-pulse::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 9999px;
+      background-color: inherit;
+      animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+  </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col max-w-md mx-auto bg-slate-50 shadow-xl border-x border-slate-200/60">
+
+  <!-- 頂部導航與積分看板 -->
+  <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200 px-4 py-3">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm shadow-emerald-600/20">
+          <i class="fa-solid fa-compass text-lg"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-base tracking-tight text-slate-900 leading-tight">150m 實境探索</h1>
+          <p class="text-[11px] text-slate-500 font-medium">步行尋寶・街區觀察</p>
+        </div>
+      </div>
+
+      <!-- 積分與歷史紀錄按鈕 -->
+      <div class="flex items-center gap-2">
+        <button id="btn-history" class="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 active:scale-95 transition border border-amber-200/80 px-3 py-1.5 rounded-full text-amber-800">
+          <i class="fa-solid fa-trophy text-amber-500 text-xs"></i>
+          <span id="score-display" class="font-bold text-sm tabular-nums">0</span>
+          <span class="text-xs font-medium">分</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- GPS 狀態列 -->
+    <div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+      <div class="flex items-center gap-2">
+        <span id="gps-indicator" class="relative w-2.5 h-2.5 rounded-full bg-amber-400 gps-pulse"></span>
+        <span id="gps-status-text" class="text-slate-600 font-medium truncate max-w-[175px]">正在取得 GPS 定位...</span>
+      </div>
+      <div class="flex items-center gap-1 text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md font-mono text-[11px]">
+        <i class="fa-solid fa-shoe-prints text-slate-400 text-[10px]"></i>
+        <span>移動: <strong id="moved-distance" class="text-slate-700">0</strong>/40m</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 系統訊息提示條 (Toast) -->
+  <div id="toast-container" class="fixed top-24 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm pointer-events-none flex flex-col gap-2"></div>
+
+  <!-- 主要探索區域 -->
+  <main class="flex-1 px-4 py-4 flex flex-col gap-4">
+    
+    <!-- 控制工具列：手動刷新與模擬移動測試 -->
+    <div class="grid grid-cols-2 gap-2">
+      <button id="btn-manual-refresh" class="flex items-center justify-center gap-1.5 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl py-2.5 px-3 text-xs font-semibold shadow-sm transition">
+        <i class="fa-solid fa-location-crosshairs text-emerald-600"></i>
+        <span>重新掃描此區</span>
+      </button>
+      <button id="btn-simulate-move" class="flex items-center justify-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 border border-indigo-200/80 rounded-xl py-2.5 px-3 text-xs font-semibold shadow-sm transition">
+        <i class="fa-solid fa-person-walking-arrow-right"></i>
+        <span>模擬移動 +50m</span>
+      </button>
+    </div>
+
+    <!-- 座標資訊微卡片 -->
+    <div class="bg-slate-100/80 rounded-xl px-3.5 py-2 flex items-center justify-between text-[11px] text-slate-500">
+      <span id="coord-display" class="font-mono">座標：等待定位中...</span>
+      <span id="area-source-badge" class="bg-white px-2 py-0.5 rounded text-slate-600 font-medium border border-slate-200/60">方圓 150m</span>
+    </div>
+
+    <!-- 載入中骨架屏 (Loading State) -->
+    <div id="loading-state" class="hidden flex-col gap-3">
+      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 animate-pulse flex gap-3.5">
+        <div class="w-16 h-16 rounded-xl bg-slate-200 shrink-0"></div>
+        <div class="flex-1 space-y-2 py-1">
+          <div class="h-4 bg-slate-200 rounded w-3/4"></div>
+          <div class="h-3 bg-slate-200 rounded w-1/2"></div>
+        </div>
+      </div>
+      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 animate-pulse flex gap-3.5">
+        <div class="w-16 h-16 rounded-xl bg-slate-200 shrink-0"></div>
+        <div class="flex-1 space-y-2 py-1">
+          <div class="h-4 bg-slate-200 rounded w-2/3"></div>
+          <div class="h-3 bg-slate-200 rounded w-1/3"></div>
+        </div>
+      </div>
+      <p class="text-center text-xs text-slate-400 mt-1">正在向 OpenStreetMap 查詢周遭地標...</p>
+    </div>
+
+    <!-- 5 張探索任務卡片容器 -->
+    <div id="quest-list" class="flex flex-col gap-3">
+      <!-- 卡片將由 JavaScript 動態渲染 -->
+    </div>
+
+    <!-- 本輪全數完成提示橫幅 -->
+    <div id="round-complete-banner" class="hidden bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-2xl p-4 shadow-md text-center">
+      <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-2">
+        <i class="fa-solid fa-flag-checkered text-lg"></i>
+      </div>
+      <h3 class="font-bold text-base">本區探索已全部處理完畢！</h3>
+      <p class="text-xs text-emerald-50 mt-1 mb-3">繼續往前走超過 40 公尺，系統將自動為你載入新區域的 5 個目標。</p>
+      <button id="btn-next-round" class="bg-white text-emerald-700 font-bold text-xs px-4 py-2 rounded-xl shadow-sm hover:bg-emerald-50 active:scale-95 transition">
+        直接換一批新目標
+      </button>
+    </div>
+
+  </main>
+
+  <!-- 底部版權與說明 -->
+  <footer class="px-4 py-4 text-center text-[11px] text-slate-400 border-t border-slate-200/60 bg-white">
+    資料來源：OpenStreetMap (Overpass API) & 台灣街區生態觀察庫<br>
+    所有探索紀錄與積分均儲存於您的瀏覽器本機空間
+  </footer>
+
+  <!-- 歷史紀錄與設定 Modal 彈窗 -->
+  <div id="history-modal" class="fixed inset-0 z-50 hidden items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-xs p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-slide-up">
+      <!-- Modal 標題 -->
+      <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-book-bookmark text-emerald-600"></i>
+          <h2 class="font-bold text-slate-800 text-base">探索圖鑑與戰績紀錄</h2>
+        </div>
+        <button id="btn-close-modal" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- 統計摘要 -->
+      <div class="grid grid-cols-2 gap-3 p-4 bg-emerald-50/60 border-b border-emerald-100">
+        <div class="bg-white p-3 rounded-2xl border border-emerald-100 text-center">
+          <div class="text-xs text-slate-500">累計總積分</div>
+          <div class="text-2xl font-bold text-emerald-600 mt-0.5"><span id="modal-score">0</span> <span class="text-xs font-normal text-slate-400">pts</span></div>
+        </div>
+        <div class="bg-white p-3 rounded-2xl border border-emerald-100 text-center">
+          <div class="text-xs text-slate-500">已發現目標數</div>
+          <div class="text-2xl font-bold text-slate-800 mt-0.5"><span id="modal-count">0</span> <span class="text-xs font-normal text-slate-400">個</span></div>
+        </div>
+      </div>
+
+      <!-- 歷史清單列表 -->
+      <div id="history-list-container" class="flex-1 overflow-y-auto p-4 space-y-2.5">
+        <!-- 動態生成歷史紀錄 -->
+      </div>
+
+      <!-- 底部重置按鈕區 -->
+      <div class="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
+        <button id="btn-reset-data" class="text-xs text-rose-600 hover:text-rose-700 font-semibold px-3 py-2 rounded-xl hover:bg-rose-50 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-trash-can"></i>
+          <span>清除所有積分與紀錄</span>
+        </button>
+        <button id="btn-modal-ok" class="bg-slate-800 text-white text-xs font-semibold px-5 py-2.5 rounded-xl hover:bg-slate-700 transition">
+          關閉
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 自訂確認重置對話框 (取代 window.confirm) -->
+  <div id="confirm-modal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+    <div class="bg-white w-full max-w-xs rounded-2xl p-5 shadow-xl text-center">
+      <div class="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
+        <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+      </div>
+      <h3 class="font-bold text-slate-800 text-base">確定要重置所有進度？</h3>
+      <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">這將會清空你所有的積分與已找到的地標歷史紀錄，且無法復原。</p>
+      <div class="grid grid-cols-2 gap-2.5 mt-5">
+        <button id="btn-confirm-cancel" class="py-2.5 px-3 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50">取消</button>
+        <button id="btn-confirm-yes" class="py-2.5 px-3 rounded-xl bg-rose-600 text-xs font-semibold text-white hover:bg-rose-700">確定清空</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * =========================================================================
+     * 1. 台灣常見街景與植物觀察備援庫 (Fallback Flora & Urban Features)
+     * 當使用者位於純住宅區或郊區，OSM 方圓 150m 內不足 5 個有名稱的地標時，
+     * 系統會自動從此庫中隨機抽取補足 5 個任務，確保每次探索都有豐富體驗。
+     * =========================================================================
+     */
+    const FALLBACK_OBSERVATIONS = [
+      { id: 'plant_banyan', name: '氣根垂落的榕樹', category: '常見植物', icon: 'fa-tree', color: 'emerald', hint: '留意路邊或公園角落有鬍鬚狀氣根的大樹' },
+      { id: 'plant_fern', name: '牆角或水溝旁的野生蕨類', category: '常見植物', icon: 'fa-leaf', color: 'emerald', hint: '潮濕的磚牆縫隙或花台陰影處常能發現' },
+      { id: 'plant_bougainvillea', name: '盛開的九重葛', category: '常見植物', icon: 'fa-spa', color: 'rose', hint: '常攀爬在圍牆或陽台邊，帶有鮮豔苞片' },
+      { id: 'plant_alstonia', name: '高大的黑板樹或樟樹', category: '行道樹觀察', icon: 'fa-seedling', color: 'emerald', hint: '抬頭看看人行道旁整齊排列的行道樹' },
+      { id: 'plant_pothos', name: '攀附樹幹的黃金葛', category: '常見植物', icon: 'fa-leaf', color: 'emerald', hint: '常見於行道樹幹或盆栽中的心形綠葉' },
+      { id: 'urban_hydrant', name: '紅色地上式消防栓', category: '街區設施', icon: 'fa-fire-extinguisher', color: 'red', hint: '通常設置在路口轉角或人行道邊緣' },
+      { id: 'urban_transformer', name: '彩繪變電箱', category: '街區地景', icon: 'fa-bolt', color: 'amber', hint: '人行道上常見畫有風景或幾何圖案的台電箱' },
+      { id: 'urban_mirror', name: '巷口凸面反射鏡', category: '街區設施', icon: 'fa-circle-dot', color: 'orange', hint: '尋找小巷交叉口圓形的橘框廣角鏡' },
+      { id: 'urban_shrine', name: '小型土地公廟或平安符貼紙', category: '在地文化', icon: 'fa-torii-gate', color: 'amber', hint: '台灣街巷中最具人情味的信仰角落' },
+      { id: 'urban_postbox', name: '紅綠雙色郵筒', category: '街區設施', icon: 'fa-envelope', color: 'emerald', hint: '看看附近超商或路口是否站立著郵筒' }
+    ];
+
+    /**
+     * =========================================================================
+     * 2. LocalStorage 狀態管理模組 (ScavengerStorage)
+     * 負責保存積分、當前 5 個任務清單、歷史已解鎖地標與上次更新中心點。
+     * =========================================================================
+     */
+    class ScavengerStorage {
+      constructor() {
+        this.STORAGE_KEY = 'urban_scavenger_v1';
+        this.state = this.load();
+      }
+
+      load() {
+        try {
+          const raw = localStorage.getItem(this.STORAGE_KEY);
+          if (raw) {
+            return JSON.parse(raw);
+          }
+        } catch (e) {
+          console.error('讀取 LocalStorage 失敗:', e);
+        }
+        return {
+          score: 0,
+          currentList: [],       // 當前畫面的 5 個目標物件
+          completedHistory: [],  // 歷史找到的紀錄 [{ id, name, category, foundAt, coords }]
+          lastCenter: null       // { lat, lon }
+        };
+      }
+
+      save() {
+        try {
+          localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.state));
+        } catch (e) {
+          console.error('寫入 LocalStorage 失敗:', e);
+        }
+      }
+
+      setCurrentList(pois, centerCoord) {
+        this.state.currentList = pois;
+        if (centerCoord) {
+          this.state.lastCenter = centerCoord;
+        }
+        this.save();
+      }
+
+      /**
+       * 更新單一任務狀態：'found' (打勾) | 'missed' (打叉) | 'pending' (重置)
+       */
+      updateItemStatus(itemId, newStatus, currentCoord) {
+        const item = this.state.currentList.find(p => p.id === itemId);
+        if (!item) return null;
+
+        const prevStatus = item.status;
+        item.status = newStatus;
+
+        // 若標記為「找到 (found)」
+        if (newStatus === 'found' && prevStatus !== 'found') {
+          const alreadyRewarded = this.state.completedHistory.some(h => h.id === itemId);
+          if (!alreadyRewarded) {
+            this.state.score += 10;
+            this.state.completedHistory.unshift({
+              id: item.id,
+              name: item.name,
+              category: item.category,
+              foundAt: new Date().toLocaleString('zh-TW', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+              coords: currentCoord ? `${currentCoord.lat.toFixed(4)}, ${currentCoord.lon.toFixed(4)}` : '未知位置'
+            });
+          }
+        }
+        // 若從「找到」改為「打叉」或取消，扣回本次未入史的分數（若為剛獲得）
+        else if (prevStatus === 'found' && newStatus !== 'found') {
+          const histIndex = this.state.completedHistory.findIndex(h => h.id === itemId);
+          if (histIndex !== -1) {
+            this.state.completedHistory.splice(histIndex, 1);
+            this.state.score = Math.max(0, this.state.score - 10);
+          }
+        }
+
+        this.save();
+        return this.state;
+      }
+
+      resetAll() {
+        this.state = {
+          score: 0,
+          currentList: [],
+          completedHistory: [],
+          lastCenter: null
+        };
+        this.save();
+      }
+    }
+
+    /**
+     * =========================================================================
+     * 3. 地理距離計算 (Haversine 公式)
+     * =========================================================================
+     */
+    function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000; // 地球半徑 (公尺)
+      const toRad = deg => deg * (Math.PI / 180);
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    function shuffleArray(arr) {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+
+    /**
+     * =========================================================================
+     * 4. Overpass API 地標與地景查詢 (支援 Node & Way Center)
+     * =========================================================================
+     */
+    async function fetchNearbyQuests(lat, lon) {
+      const radius = 150; // 方圓 150 公尺
+      // 查詢歷史遺跡、觀光景點、公園綠地、宗教場所、特色設施
+      const query = `
+        [out:json][timeout:12];
+        (
+          node(around:${radius},${lat},${lon})["historic"];
+          way(around:${radius},${lat},${lon})["historic"];
+          node(around:${radius},${lat},${lon})["tourism"];
+          way(around:${radius},${lat},${lon})["tourism"];
+          node(around:${radius},${lat},${lon})["leisure"="park"];
+          way(around:${radius},${lat},${lon})["leisure"="park"];
+          node(around:${radius},${lat},${lon})["amenity"="place_of_worship"];
+          way(around:${radius},${lat},${lon})["amenity"="place_of_worship"];
+          node(around:${radius},${lat},${lon})["amenity"="library"];
+          node(around:${radius},${lat},${lon})["natural"="tree"];
+        );
+        out center;
+      `;
+
+      let osmPois = [];
+
+      try {
+        const response = await fetch('https://overpass-api.de/api/interpreter', {
+          method: 'POST',
+          body: query,
+          headers: { 'Content-Type': 'text/plain' }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const seenNames = new Set();
+
+          osmPois = data.elements
+            .filter(el => el.tags && (el.tags['name:zh'] || el.tags.name))
+            .map(el => {
+              const name = el.tags['name:zh'] || el.tags.name;
+              const itemLat = el.lat || (el.center ? el.center.lat : null);
+              const itemLon = el.lon || (el.center ? el.center.lon : null);
+
+              // 分類與圖示判定
+              let category = '在地地標';
+              let icon = 'fa-map-pin';
+              let color = 'blue';
+
+              if (el.tags.historic) {
+                category = '歷史遺跡';
+                icon = 'fa-landmark';
+                color = 'amber';
+              } else if (el.tags.leisure === 'park' || el.tags.natural) {
+                category = '公園與自然';
+                icon = 'fa-tree';
+                color = 'emerald';
+              } else if (el.tags.amenity === 'place_of_worship') {
+                category = '宗教文化';
+                icon = 'fa-place-of-worship';
+                color = 'orange';
+              } else if (el.tags.tourism) {
+                category = '觀光景點';
+                icon = 'fa-camera-retro';
+                color = 'indigo';
+              }
+
+              const dist = (itemLat && itemLon)
+                ? Math.round(getDistanceInMeters(lat, lon, itemLat, itemLon))
+                : null;
+
+              return {
+                id: `${el.type}_${el.id}`,
+                name: name,
+                category: category,
+                icon: icon,
+                color: color,
+                distance: dist,
+                hint: dist !== null ? `距離你目前位置約 ${dist} 公尺` : '位於方圓 150 公尺內',
+                status: 'pending',
+                source: 'OSM',
+                photoUrl: null // 預留未來照片欄位
+              };
+            })
+            .filter(item => {
+              // 去除重複名稱
+              if (seenNames.has(item.name)) return false;
+              seenNames.add(item.name);
+              return true;
+            });
+        }
+      } catch (err) {
+        console.warn('Overpass API 查詢失敗或超時，將使用備援觀察清單:', err);
+      }
+
+      // 隨機抽選最多 5 筆 OSM 地標
+      let selected = shuffleArray(osmPois).slice(0, 5);
+
+      // 若不足 5 筆，從台灣常見植物與街景觀察庫補足至 5 筆
+      if (selected.length < 5) {
+        const needed = 5 - selected.length;
+        const fallbacks = shuffleArray(FALLBACK_OBSERVATIONS).slice(0, needed).map((fb, idx) => ({
+          id: `${fb.id}_${Date.now()}_${idx}`,
+          name: fb.name,
+          category: fb.category,
+          icon: fb.icon,
+          color: fb.color,
+          distance: null,
+          hint: fb.hint,
+          status: 'pending',
+          source: 'LOCAL',
+          photoUrl: null // 預留未來照片欄位
+        }));
+        selected = [...selected, ...fallbacks];
+      }
+
+      return selected;
+    }
+
+    /**
+     * =========================================================================
+     * 5. 主應用程式控制器 (App Controller)
+     * =========================================================================
+     */
+    const storage = new ScavengerStorage();
+    const DISTANCE_THRESHOLD = 40; // 移動超過 40 公尺才自動刷新
+    let currentCoord = null;       // 目前最新 GPS 座標
+    let isFetching = false;        // 防止重複並發請求
+    let watchId = null;
+
+    // DOM 元素參照
+    const els = {
+      scoreDisplay: document.getElementById('score-display'),
+      gpsIndicator: document.getElementById('gps-indicator'),
+      gpsStatusText: document.getElementById('gps-status-text'),
+      movedDistance: document.getElementById('moved-distance'),
+      coordDisplay: document.getElementById('coord-display'),
+      loadingState: document.getElementById('loading-state'),
+      questList: document.getElementById('quest-list'),
+      roundCompleteBanner: document.getElementById('round-complete-banner'),
+      toastContainer: document.getElementById('toast-container'),
+      // Buttons
+      btnManualRefresh: document.getElementById('btn-manual-refresh'),
+      btnSimulateMove: document.getElementById('btn-simulate-move'),
+      btnNextRound: document.getElementById('btn-next-round'),
+      btnHistory: document.getElementById('btn-history'),
+      // Modals
+      historyModal: document.getElementById('history-modal'),
+      btnCloseModal: document.getElementById('btn-close-modal'),
+      btnModalOk: document.getElementById('btn-modal-ok'),
+      modalScore: document.getElementById('modal-score'),
+      modalCount: document.getElementById('modal-count'),
+      historyListContainer: document.getElementById('history-list-container'),
+      btnResetData: document.getElementById('btn-reset-data'),
+      confirmModal: document.getElementById('confirm-modal'),
+      btnConfirmCancel: document.getElementById('btn-confirm-cancel'),
+      btnConfirmYes: document.getElementById('btn-confirm-yes')
+    };
+
+    // 顯示輕量級 Toast 提示
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      const colors = {
+        success: 'bg-emerald-600 text-white',
+        info: 'bg-slate-800 text-white',
+        warning: 'bg-amber-500 text-white'
+      };
+      toast.className = `${colors[type] || colors.info} text-xs font-medium px-4 py-2.5 rounded-xl shadow-lg flex items-center justify-center gap-2 transition-all duration-300 opacity-0 translate-y-[-8px]`;
+      toast.innerHTML = `<span>${message}</span>`;
+      els.toastContainer.appendChild(toast);
+
+      requestAnimationFrame(() => {
+        toast.classList.remove('opacity-0', 'translate-y-[-8px]');
+      });
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-[-8px]');
+        setTimeout(() => toast.remove(), 300);
+      }, 2800);
+    }
+
+    // 更新頂部積分看板
+    function updateScoreUI() {
+      els.scoreDisplay.textContent = storage.state.score;
+    }
+
+    // 渲染 5 張探索任務卡片
+    function renderQuestCards() {
+      const list = storage.state.currentList;
+      els.questList.innerHTML = '';
+
+      if (!list || list.length === 0) {
+        els.roundCompleteBanner.classList.add('hidden');
+        return;
+      }
+
+      // 檢查是否 5 個任務都已經被打勾或打叉
+      const allProcessed = list.every(item => item.status === 'found' || item.status === 'missed');
+      if (allProcessed) {
+        els.roundCompleteBanner.classList.remove('hidden');
+      } else {
+        els.roundCompleteBanner.classList.add('hidden');
+      }
+
+      const colorMap = {
+        emerald: 'bg-emerald-50 text-emerald-600 border-emerald-200/70',
+        amber: 'bg-amber-50 text-amber-600 border-amber-200/70',
+        rose: 'bg-rose-50 text-rose-600 border-rose-200/70',
+        red: 'bg-red-50 text-red-600 border-red-200/70',
+        orange: 'bg-orange-50 text-orange-600 border-orange-200/70',
+        blue: 'bg-blue-50 text-blue-600 border-blue-200/70',
+        indigo: 'bg-indigo-50 text-indigo-600 border-indigo-200/70'
+      };
+
+      list.forEach((item, index) => {
+        const isFound = item.status === 'found';
+        const isMissed = item.status === 'missed';
+        const badgeStyle = colorMap[item.color] || colorMap.emerald;
+
+        const card = document.createElement('div');
+        card.className = `card-transition rounded-2xl p-3.5 border shadow-xs flex items-center gap-3.5 ${
+          isFound
+            ? 'bg-emerald-50/70 border-emerald-300'
+            : isMissed
+            ? 'bg-slate-100/80 border-slate-200 opacity-65'
+            : 'bg-white border-slate-200/90'
+        }`;
+
+        // 預留未來照片顯示的版位框架 (目前為圖示佔位框，保留未來 img 替換空間)
+        card.innerHTML = `
+          <div class="relative w-16 h-16 rounded-xl border ${badgeStyle} flex flex-col items-center justify-center shrink-0 overflow-hidden" title="預留照片版位">
+            <i class="fa-solid ${item.icon} text-xl"></i>
+            <span class="text-[9px] font-medium mt-1 opacity-75">無照片</span>
+            ${isFound ? '<div class="absolute inset-0 bg-emerald-600/85 text-white flex items-center justify-center"><i class="fa-solid fa-check text-xl"></i></div>' : ''}
+          </div>
+
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5 mb-1">
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-md border ${badgeStyle}">
+                ${item.category}
+              </span>
+              ${item.source === 'OSM'
+                ? '<span class="text-[10px] text-slate-400 font-medium"><i class="fa-solid fa-location-dot text-[9px]"></i> 地圖地標</span>'
+                : '<span class="text-[10px] text-slate-400 font-medium"><i class="fa-solid fa-binoculars text-[9px]"></i> 街區觀察</span>'
+              }
+            </div>
+            <h3 class="font-bold text-sm text-slate-800 truncate ${isMissed ? 'line-through text-slate-500' : ''}">
+              ${index + 1}. ${item.name}
+            </h3>
+            <p class="text-[11px] text-slate-500 truncate mt-0.5">${item.hint}</p>
+          </div>
+
+          <!-- 右側操作按鈕：打勾 (找到) / 打叉 (找不到) -->
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button
+              data-action="found"
+              data-id="${item.id}"
+              aria-label="找到了"
+              class="w-10 h-10 rounded-xl flex items-center justify-center transition active:scale-90 ${
+                isFound
+                  ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
+                  : 'bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-600'
+              }">
+              <i class="fa-solid fa-check text-base"></i>
+            </button>
+
+            <button
+              data-action="missed"
+              data-id="${item.id}"
+              aria-label="找不到"
+              class="w-10 h-10 rounded-xl flex items-center justify-center transition active:scale-90 ${
+                isMissed
+                  ? 'bg-rose-500 text-white shadow-sm shadow-rose-500/30'
+                  : 'bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-500'
+              }">
+              <i class="fa-solid fa-xmark text-base"></i>
+            </button>
+          </div>
+        `;
+
+        els.questList.appendChild(card);
+      });
+    }
+
+    // 處理任務卡片的「打勾」或「打叉」點擊事件
+    els.questList.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+
+      const action = btn.dataset.action; // 'found' | 'missed'
+      const itemId = btn.dataset.id;
+      const item = storage.state.currentList.find(p => p.id === itemId);
+      if (!item) return;
+
+      // 若點擊已選中的狀態，則切換回 'pending'
+      const nextStatus = item.status === action ? 'pending' : action;
+      storage.updateItemStatus(itemId, nextStatus, currentCoord);
+
+      if (nextStatus === 'found') {
+        showToast(`🎉 找到「${item.name}」！積分 +10`, 'success');
+      } else if (nextStatus === 'missed') {
+        showToast(`已略過「${item.name}」`, 'info');
+      }
+
+      updateScoreUI();
+      renderQuestCards();
+    });
+
+    // 載入指定座標的新任務清單
+    async function loadNewAreaQuests(lat, lon, reasonText = '已更新周遭 150m 探索目標') {
+      if (isFetching) return;
+      isFetching = true;
+
+      els.loadingState.classList.remove('hidden');
+      els.loadingState.classList.add('flex');
+      els.questList.classList.add('hidden');
+      els.roundCompleteBanner.classList.add('hidden');
+
+      try {
+        const newPois = await fetchNearbyQuests(lat, lon);
+        storage.setCurrentList(newPois, { lat, lon });
+        els.movedDistance.textContent = '0';
+        showToast(reasonText, 'info');
+      } finally {
+        isFetching = false;
+        els.loadingState.classList.add('hidden');
+        els.loadingState.classList.remove('flex');
+        els.questList.classList.remove('hidden');
+        renderQuestCards();
+      }
+    }
+
+    // 處理新取得的 GPS 座標
+    function handlePositionUpdate(lat, lon) {
+      currentCoord = { lat, lon };
+      els.coordDisplay.textContent = `座標：${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+      els.gpsIndicator.className = 'relative w-2.5 h-2.5 rounded-full bg-emerald-500 gps-pulse';
+      els.gpsStatusText.textContent = 'GPS 定位追蹤中';
+
+      const lastCenter = storage.state.lastCenter;
+
+      // 情況 1：從未有基準點，或目前任務清單為空 -> 立即載入
+      if (!lastCenter || storage.state.currentList.length === 0) {
+        loadNewAreaQuests(lat, lon, '📍 已鎖定位置，載入周遭 5 個目標');
+        return;
+      }
+
+      // 情況 2：計算距離上次基準點的移動公尺數
+      const dist = getDistanceInMeters(lastCenter.lat, lastCenter.lon, lat, lon);
+      els.movedDistance.textContent = Math.round(dist);
+
+      // 情況 3：移動超過 40 公尺 -> 自動刷新新區域地標
+      if (dist >= DISTANCE_THRESHOLD) {
+        loadNewAreaQuests(lat, lon, `🚶 已移動 ${Math.round(dist)}m，切換至新區域目標！`);
+      }
+    }
+
+    // 啟動瀏覽器 Geolocation 監聽
+    function initGeolocation() {
+      if (!navigator.geolocation) {
+        els.gpsIndicator.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
+        els.gpsStatusText.textContent = '瀏覽器不支援 GPS 定位';
+        // 使用預設台北市中心座標作為備援演示
+        handlePositionUpdate(25.0330, 121.5654);
+        return;
+      }
+
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          handlePositionUpdate(pos.coords.latitude, pos.coords.longitude);
+        },
+        (err) => {
+          console.warn('GPS 錯誤:', err);
+          els.gpsIndicator.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
+          els.gpsStatusText.textContent = 'GPS 訊號微弱 (可點模擬移動)';
+
+          // 若尚未有任何資料，使用預設座標初始化
+          if (storage.state.currentList.length === 0) {
+            handlePositionUpdate(25.0330, 121.5654);
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 5000
+        }
+      );
+    }
+
+    // 手動刷新按鈕
+    els.btnManualRefresh.addEventListener('click', () => {
+      const target = currentCoord || storage.state.lastCenter || { lat: 25.0330, lon: 121.5654 };
+      loadNewAreaQuests(target.lat, target.lon, '🔄 已重新掃描目前位置');
+    });
+
+    els.btnNextRound.addEventListener('click', () => {
+      const target = currentCoord || storage.state.lastCenter || { lat: 25.0330, lon: 121.5654 };
+      loadNewAreaQuests(target.lat, target.lon, '✨ 已為你換上一批新目標');
+    });
+
+    // 模擬移動 +50 公尺測試按鈕（方便室內/電腦開發測試）
+    els.btnSimulateMove.addEventListener('click', () => {
+      const base = currentCoord || storage.state.lastCenter || { lat: 25.0330, lon: 121.5654 };
+      // 緯度約 0.00045 度 ≈ 50 公尺
+      const randomAngle = Math.random() * Math.PI * 2;
+      const deltaLat = (50 / 111320) * Math.cos(randomAngle);
+      const deltaLon = (50 / (111320 * Math.cos(base.lat * Math.PI / 180))) * Math.sin(randomAngle);
+
+      const simulatedLat = base.lat + deltaLat;
+      const simulatedLon = base.lon + deltaLon;
+
+      handlePositionUpdate(simulatedLat, simulatedLon);
+    });
+
+    // 歷史紀錄 Modal 開關與渲染
+    function openHistoryModal() {
+      const history = storage.state.completedHistory;
+      els.modalScore.textContent = storage.state.score;
+      els.modalCount.textContent = history.length;
+
+      if (history.length === 0) {
+        els.historyListContainer.innerHTML = `
+          <div class="text-center py-10 text-slate-400">
+            <i class="fa-regular fa-compass text-3xl mb-2 opacity-50"></i>
+            <p class="text-xs">尚未找到任何地標，快去周遭走走吧！</p>
+          </div>
+        `;
+      } else {
+        els.historyListContainer.innerHTML = history.map(item => `
+          <div class="flex items-center justify-between bg-slate-50 border border-slate-200/70 rounded-xl p-3">
+            <div class="min-w-0 pr-2">
+              <div class="flex items-center gap-1.5">
+                <span class="text-[10px] font-semibold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">${item.category}</span>
+                <span class="text-[10px] text-slate-400">${item.foundAt}</span>
+              </div>
+              <div class="font-bold text-xs text-slate-800 truncate mt-1">${item.name}</div>
+              <div class="text-[10px] text-slate-400 font-mono mt-0.5"><i class="fa-solid fa-location-dot text-[9px]"></i> ${item.coords}</div>
+            </div>
+            <span class="text-xs font-bold text-emerald-600 shrink-0">+10 分</span>
+          </div>
+        `).join('');
+      }
+
+      els.historyModal.classList.remove('hidden');
+      els.historyModal.classList.add('flex');
+    }
+
+    function closeHistoryModal() {
+      els.historyModal.classList.add('hidden');
+      els.historyModal.classList.remove('flex');
+    }
+
+    els.btnHistory.addEventListener('click', openHistoryModal);
+    els.btnCloseModal.addEventListener('click', closeHistoryModal);
+    els.btnModalOk.addEventListener('click', closeHistoryModal);
+    els.historyModal.addEventListener('click', (e) => {
+      if (e.target === els.historyModal) closeHistoryModal();
+    });
+
+    // 重置資料確認流程
+    els.btnResetData.addEventListener('click', () => {
+      els.confirmModal.classList.remove('hidden');
+      els.confirmModal.classList.add('flex');
+    });
+
+    els.btnConfirmCancel.addEventListener('click', () => {
+      els.confirmModal.classList.add('hidden');
+      els.confirmModal.classList.remove('flex');
+    });
+
+    els.btnConfirmYes.addEventListener('click', () => {
+      storage.resetAll();
+      updateScoreUI();
+      els.confirmModal.classList.add('hidden');
+      els.confirmModal.classList.remove('flex');
+      closeHistoryModal();
+      showToast('已清除所有積分與歷史紀錄', 'warning');
+
+      const target = currentCoord || { lat: 25.0330, lon: 121.5654 };
+      loadNewAreaQuests(target.lat, target.lon, '已重新載入新任務');
+    });
+
+    // 頁面初始化啟動
+    window.addEventListener('DOMContentLoaded', () => {
+      updateScoreUI();
+      // 若 LocalStorage 已有未完成的任務清單，先立即渲染出來提升秒開體驗
+      if (storage.state.currentList.length > 0) {
+        renderQuestCards();
+      }
+      initGeolocation();
+    });
+  </script>
+</body>
+</html>
